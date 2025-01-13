@@ -1,36 +1,53 @@
 package main
 
 import (
+	"database/sql"
+	"fmt"
+	"log"
 	"net/http"
 
-	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/handler"
+	"github.com/gin-gonic/gin"
+	_ "github.com/lib/pq"
 )
 
-// Define the schema
-var schema, _ = graphql.NewSchema(graphql.SchemaConfig{
-    Query: graphql.NewObject(graphql.ObjectConfig{
-        Name: "RootQuery",
-        Fields: graphql.Fields{
-            "hello": &graphql.Field{
-                Type: graphql.String,
-                Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-                    return "Hello, world!", nil
-                },
-            },
-        },
-    }),
-})
+type User struct { 
+    Username string `json:"username"` 
+    Password string `json:"password"` 
+}
 
 func main() {
-    // Create a new GraphQL handler
-    h := handler.New(&handler.Config{
-        Schema: &schema,
-        Pretty: true,
-        GraphiQL: true, // Enable GraphiQL, a GraphQL GUI for testing
-    })
+  r := gin.Default()
 
-    // Set up the HTTP server
-    http.Handle("/graphql", h)
-    http.ListenAndServe(":8080", nil)
+  psqlInfo := "host=localhost port=5432 user=exampleuser password=examplepass dbname=exampledb sslmode=disable"
+  db, err := sql.Open("postgres", psqlInfo) 
+  if err != nil { 
+    log.Fatal(err) 
+    } 
+    defer db.Close() 
+    err = db.Ping() 
+    if err != nil { 
+        log.Fatal(err) 
+        } 
+        fmt.Println("Successfully connected to the database!")
+
+  r.GET("/ping", func(c *gin.Context) {
+    c.JSON(http.StatusOK, gin.H{
+      "message": "pong",
+    })
+  })
+
+   r.POST("/ping", func(c *gin.Context) {
+    var user User 
+    if err := c.ShouldBindJSON(&user); 
+    err != nil { 
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()}) 
+        return 
+    }
+    c.JSON(http.StatusOK, gin.H{
+      "message": "pong",
+    })
+  })
+  
+
+  r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
 }
