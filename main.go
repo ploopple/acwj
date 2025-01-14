@@ -1,53 +1,74 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
-	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/lib/pq"
 )
 
-type User struct { 
-    Username string `json:"username"` 
-    Password string `json:"password"` 
-}
-
 func main() {
-  r := gin.Default()
+	r := gin.Default()
 
-  psqlInfo := "host=localhost port=5432 user=exampleuser password=examplepass dbname=exampledb sslmode=disable"
-  db, err := sql.Open("postgres", psqlInfo) 
-  if err != nil { 
-    log.Fatal(err) 
-    } 
-    defer db.Close() 
-    err = db.Ping() 
-    if err != nil { 
-        log.Fatal(err) 
-        } 
-        fmt.Println("Successfully connected to the database!")
+	// Create the upload route
+	r.POST("/upload", func(c *gin.Context) {
+		// Parse multipart form
+		file, err := c.FormFile("image")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get image from form"})
+			return
+		}
 
-  r.GET("/ping", func(c *gin.Context) {
-    c.JSON(http.StatusOK, gin.H{
-      "message": "pong",
-    })
-  })
+		// Ensure the `images` directory exists
+		dir := "./images"
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.Mkdir(dir, os.ModePerm); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create images directory"})
+				return
+			}
+		}
 
-   r.POST("/ping", func(c *gin.Context) {
-    var user User 
-    if err := c.ShouldBindJSON(&user); 
-    err != nil { 
-        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()}) 
-        return 
-    }
-    c.JSON(http.StatusOK, gin.H{
-      "message": "pong",
-    })
-  })
-  
+		// Create the destination file path
+		filePath := filepath.Join(dir, file.Filename)
 
-  r.Run() // listen and serve on 0.0.0.0:8080 (for windows "localhost:8080")
+		// Save the file
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
+			return
+		}
+
+		// Return success response
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Image uploaded successfully",
+			"path":    filePath,
+		})
+	})
+
+	// Start the server
+	r.Run(":8080") // Listen and serve on localhost:8080
 }
+
+// package main
+
+// import (
+// 	"acwj/db"
+// 	"acwj/routes"
+
+// 	"github.com/gin-gonic/gin"
+// )
+
+// func main() {
+// 	// Connect to database
+// 	db.Connect()
+// 	db.Migrate()
+
+// 	// Initialize Gin
+// 	r := gin.Default()
+
+// 	// Setup routes
+// 	routes.UserRoutes(r)
+
+// 	// Start the server
+// 	r.Run(":8080")
+// }
