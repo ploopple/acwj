@@ -24,7 +24,7 @@ package models
 // }
 
 type Store struct {
-	ID               int    `gorm:"primary_key"`
+	ID               int    `gorm:"primary_key" json:"id"`
 	Name             string `json:"name"`
 	ActiveTime       string `json:"activeTime"`
 	AllowedLocations string `json:"allowedLocations"`

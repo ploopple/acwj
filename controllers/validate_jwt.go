@@ -53,7 +53,7 @@ func ValidateTokenMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		c.Set("user", user)
+		c.Set("uId", user.ID)
 		c.Next()
 	}
 }

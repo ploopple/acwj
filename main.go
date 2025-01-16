@@ -9,12 +9,13 @@ import (
 
 func main() {
 	db.Connect()
-	// db.Migrate()
+	//db.Migrate()
 
 	r := gin.Default()
 
 	routes.UserRoutes(r)
 	routes.StoreRoutes(r)
+	routes.OrderRoutes(r)
 
 	r.Run(":8080")
 }

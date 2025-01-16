@@ -34,4 +34,11 @@ func Migrate() {
 		log.Fatalf("Failed to migrate database: %v", err)
 	}
 	log.Println("Database migration completed")
+
+	err = DB.AutoMigrate(&models.Order{})
+	if err != nil {
+		log.Fatalf("Failed to migrate database: %v", err)
+	}
+	log.Println("Database migration completed")
+
 }
