@@ -1,74 +1,121 @@
 package main
 
 import (
+	"fmt"
+	"log"
 	"net/http"
-	"os"
-	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
+type User struct {
+	ID    int    `gorm:"primary_key"`
+	Name  string `json:"name"`
+	Email string `gorm:"unique" json:"email"`
+}
+
+func (u *User) TableName() string {
+	return "users"
+}
+
+var jwtKey = []byte("your_secret_key")
+
+type Claims struct {
+	Id int `json:"id"`
+	jwt.StandardClaims
+}
+
 func main() {
+	dsn := "host=autorack.proxy.rlwy.net user=postgres password=moGcokUQZOQzFYefiAcYnWxnhGsgLxmm dbname=railway port=41861 sslmode=disable"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+	fmt.Println("Connected to the database successfully!")
 	r := gin.Default()
 
-	// Create the upload route
-	r.POST("/upload", func(c *gin.Context) {
-		// Parse multipart form
-		file, err := c.FormFile("image")
+	//db.AutoMigrate(&User{})
+
+	r.GET("/signup", func(c *gin.Context) {
+		var user User
+		if err := c.ShouldBindJSON(&user); err != nil {
+			c.JSON(400, gin.H{"error": err.Error()})
+			return
+		}
+
+		if err := db.Create(&user).Error; err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Generate JWT token
+		expirationTime := time.Now().Add(15 * time.Minute)
+		claims := &Claims{
+			Id: user.ID,
+			StandardClaims: jwt.StandardClaims{
+				ExpiresAt: expirationTime.Unix(),
+			},
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString(jwtKey)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to get image from form"})
+			c.JSON(500, gin.H{"error": err.Error()})
 			return
 		}
 
-		// Ensure the `images` directory exists
-		dir := "./images"
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			if err := os.Mkdir(dir, os.ModePerm); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create images directory"})
-				return
-			}
-		}
+		// c.JSON(201, user)
+		c.JSON(http.StatusOK, gin.H{"token": tokenString})
+	})
 
-		// Create the destination file path
-		filePath := filepath.Join(dir, file.Filename)
-
-		// Save the file
-		if err := c.SaveUploadedFile(file, filePath); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save image"})
-			return
-		}
-
-		// Return success response
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Image uploaded successfully",
-			"path":    filePath,
-		})
+	r.GET("/validate", validateTokenMiddleware(db), func(c *gin.Context) {
+		user, _ := c.Get("user")
+		c.JSON(http.StatusOK, user)
 	})
 
 	// Start the server
 	r.Run(":8080") // Listen and serve on localhost:8080
 }
 
-// package main
-
-// import (
-// 	"acwj/db"
-// 	"acwj/routes"
-
-// 	"github.com/gin-gonic/gin"
-// )
-
-// func main() {
-// 	// Connect to database
-// 	db.Connect()
-// 	db.Migrate()
-
-// 	// Initialize Gin
-// 	r := gin.Default()
-
-// 	// Setup routes
-// 	routes.UserRoutes(r)
-
-// 	// Start the server
-// 	r.Run(":8080")
-// }
+func validateTokenMiddleware(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tokenString := strings.Split(c.GetHeader("Authorization"), " ")[1]
+		// print(strings.Split(tokenString, " ")[1])
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
+			c.Abort()
+			return
+		}
+		claims := &Claims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			return jwtKey, nil
+		})
+		if err != nil {
+			if err == jwt.ErrSignatureInvalid {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+				c.Abort()
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "could not parse token"})
+			c.Abort()
+			return
+		}
+		if !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.Abort()
+			return
+		}
+		var user User
+		if err := db.Where("id = ?", claims.Id).First(&user).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "user not found"})
+			c.Abort()
+			return
+		}
+		c.Set("user", user)
+		c.Next()
+	}
+}
